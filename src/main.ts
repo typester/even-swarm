@@ -146,7 +146,8 @@ async function loadVenues() {
     renderPhoneVenues();
     await showGlassesVenueList();
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : "Unknown error";
+    console.error("loadVenues error:", err);
+    const msg = errorMessage(err);
     setStatus(`Error: ${msg}`);
     await showGlassesText(`Error:\n${msg}`);
   }
@@ -169,7 +170,8 @@ async function doCheckin(index: number) {
       bridge?.shutDownPageContainer(0);
     }, 2000);
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : "Unknown error";
+    console.error("doCheckin error:", err);
+    const msg = errorMessage(err);
     setStatus(`Check-in failed: ${msg}`);
     await showGlassesText(`Failed:\n${msg}`);
   }
@@ -233,6 +235,21 @@ function escapeHtml(s: string): string {
   const div = document.createElement("div");
   div.textContent = s;
   return div.innerHTML;
+}
+
+function errorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  // GeolocationPositionError
+  if (err && typeof err === "object" && "code" in err && "message" in err) {
+    const geo = err as GeolocationPositionError;
+    const reasons: Record<number, string> = {
+      1: "Location permission denied",
+      2: "Location unavailable",
+      3: "Location request timed out",
+    };
+    return reasons[geo.code] || geo.message;
+  }
+  return String(err);
 }
 
 // --- Main ---
