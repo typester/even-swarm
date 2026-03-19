@@ -1,0 +1,14 @@
+{
+  "package_id": "com.typester.evenswarm",
+  "edition": "202601",
+  "name": "Even Swarm",
+  "version": "0.0.1",
+  "min_app_version": "0.1.0",
+  "min_sdk_version": "0.1.0",
+  "tagline": "Swarm check-in for your glasses",
+  "description": "Check in to Swarm/Foursquare venues directly from your Even Realities G2 smart glasses.",
+  "author": "typester",
+  "entrypoint": "index.html",
+  "permissions": [],
+  "supported_languages": ["en"]
+}
