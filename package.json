@@ -11,11 +11,11 @@
     "pack": "tsc && vite build --base=./ && evenhub pack app.json dist -o even-swarm.ehpk"
   },
   "dependencies": {
-    "@evenrealities/even_hub_sdk": "^0.0.7"
+    "@evenrealities/even_hub_sdk": "^0.0.10"
   },
   "devDependencies": {
-    "@evenrealities/evenhub-cli": "^0.1.8",
-    "@evenrealities/evenhub-simulator": "^0.4.1",
+    "@evenrealities/evenhub-cli": "^0.1.13",
+    "@evenrealities/evenhub-simulator": "^0.7.3",
     "typescript": "~5.7.3",
     "vite": "^6.0.0"
   }
