@@ -1,6 +1,6 @@
 const API_BASE = "https://api.foursquare.com/v2";
 const API_VERSION = "20231231";
-const TOKEN_KEY = "swarm_access_token";
+const TOKEN_KEY = "foursquare_access_token";
 
 export function getAuthUrl(clientId: string): string {
   const redirectUri = window.location.origin + window.location.pathname;

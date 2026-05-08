@@ -8,7 +8,7 @@
     "sim": "evenhub-simulator http://localhost:5173",
     "dev:sim": "vite & sleep 1 && evenhub-simulator http://localhost:5173",
     "build": "tsc && vite build",
-    "pack": "tsc && vite build --base=./ && evenhub pack app.json dist -o even-swarm.ehpk"
+    "pack": "tsc && vite build --base=./ && evenhub pack app.json dist -o checkin.ehpk"
   },
   "dependencies": {
     "@evenrealities/even_hub_sdk": "^0.0.10"
