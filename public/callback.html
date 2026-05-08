@@ -10,11 +10,14 @@
       const hash = window.location.hash.slice(1);
       const params = new URLSearchParams(hash);
       const token = params.get("access_token");
-      if (token && window.opener) {
-        window.opener.postMessage({ access_token: token }, "*");
-        window.close();
+      const state = params.get("state");
+
+      if (token && state && state.startsWith("http://127.0.0.1:")) {
+        window.location.href = state + "#access_token=" + token;
       } else {
-        document.querySelector("p").textContent = "Authentication failed. You can close this window.";
+        document.querySelector("p").textContent =
+          "Authentication failed. token=" + (token ? "ok" : "missing") +
+          " state=" + (state || "missing");
       }
     </script>
   </body>

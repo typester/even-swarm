@@ -9,6 +9,7 @@ import {
   OsEventTypeList,
 } from "@evenrealities/even_hub_sdk";
 import * as foursquare from "./foursquare";
+import appJson from "../app.json";
 
 const FOURSQUARE_CLIENT_ID = import.meta.env
   .VITE_FOURSQUARE_CLIENT_ID as string;
@@ -262,27 +263,21 @@ function renderDebugInfo() {
   if (hrefEl) hrefEl.textContent = `href: ${window.location.href}`;
   if (originEl) originEl.textContent = `origin: ${window.location.origin}`;
   if (redirectEl) redirectEl.textContent = `redirect_uri: ${redirectUri}`;
+
+  const versionEl = document.getElementById("debug-version");
+  if (versionEl) versionEl.textContent = `app version: ${appJson.version}`;
 }
 
 async function main() {
   renderDebugInfo();
-  token = foursquare.getToken();
+
+  const callbackToken = foursquare.handleAuthCallback();
+  token = callbackToken ?? foursquare.getToken();
 
   if (!token) {
     showLogin();
-    loginBtn.addEventListener("click", async () => {
-      loginBtn.setAttribute("disabled", "true");
-      setStatus("Opening login...");
-      try {
-        token = await foursquare.openAuthPopup(FOURSQUARE_CLIENT_ID);
-        showApp();
-        await initGlasses();
-        await loadVenues();
-      } catch (err: unknown) {
-        loginBtn.removeAttribute("disabled");
-        const msg = err instanceof Error ? err.message : String(err);
-        setStatus(`Login failed: ${msg}`);
-      }
+    loginBtn.addEventListener("click", () => {
+      foursquare.redirectToAuth(FOURSQUARE_CLIENT_ID);
     });
     return;
   }
