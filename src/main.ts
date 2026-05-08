@@ -113,12 +113,60 @@ async function showGlassesVenueList() {
 
 // --- Core logic ---
 
-function getLocation(): Promise<GeolocationPosition> {
+type LatLng = { latitude: number; longitude: number };
+
+const COMPANION_URL = "http://127.0.0.1:38080/location";
+const COMPANION_RETRY_MS = 1000;
+const COMPANION_RETRY_MAX = 15;
+
+const companionDebugEl = document.getElementById("debug-companion");
+function setCompanionDebug(s: string) {
+  if (companionDebugEl) companionDebugEl.textContent = `companion: ${s}`;
+}
+
+async function fetchCompanionOnce(): Promise<LatLng | "no-fix" | "unreachable"> {
+  try {
+    const res = await fetch(COMPANION_URL, { signal: AbortSignal.timeout(2000) });
+    if (res.ok) {
+      const data = (await res.json()) as LatLng;
+      setCompanionDebug("ok");
+      return { latitude: data.latitude, longitude: data.longitude };
+    }
+    if (res.status === 503) {
+      setCompanionDebug("503 waiting for fix");
+      return "no-fix";
+    }
+    setCompanionDebug(`http ${res.status}`);
+    return "unreachable";
+  } catch (err) {
+    const name = err instanceof Error ? err.name : "Error";
+    setCompanionDebug(`unreachable (${name})`);
+    return "unreachable";
+  }
+}
+
+async function getLocation(): Promise<LatLng> {
+  const first = await fetchCompanionOnce();
+  if (typeof first === "object") return first;
+
+  if (first === "no-fix") {
+    setStatus("Waiting for GPS fix…");
+    await showGlassesText("Waiting for GPS fix…");
+    for (let i = 0; i < COMPANION_RETRY_MAX; i++) {
+      await new Promise((r) => setTimeout(r, COMPANION_RETRY_MS));
+      const r = await fetchCompanionOnce();
+      if (typeof r === "object") return r;
+      if (r === "unreachable") throw new Error("companion stopped responding while waiting for GPS fix");
+    }
+    throw new Error("companion: no GPS fix after 15s");
+  }
+
+  // Genuinely unreachable → fall back to navigator.geolocation (desktop dev / simulator).
   return new Promise((resolve, reject) => {
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
         navigator.geolocation.clearWatch(watchId);
-        resolve(pos);
+        resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
       },
       (err) => {
         navigator.geolocation.clearWatch(watchId);
@@ -136,8 +184,7 @@ async function loadVenues() {
   await showGlassesText("Getting location...");
 
   try {
-    const pos = await getLocation();
-    const { latitude, longitude } = pos.coords;
+    const { latitude, longitude } = await getLocation();
 
     setStatus("Searching venues...");
     await showGlassesText("Searching venues...");
@@ -250,19 +297,14 @@ function errorMessage(err: unknown): string {
   // GeolocationPositionError
   if (err && typeof err === "object" && "code" in err && "message" in err) {
     const geo = err as GeolocationPositionError;
-    const reasons: Record<number, string> = {
-      1: "Location permission denied",
-      2: "Location unavailable",
-      3: "Location request timed out",
-    };
-    return reasons[geo.code] || geo.message;
+    return `code=${geo.code} ${geo.message}`;
   }
   return String(err);
 }
 
 // --- Main ---
 
-function renderDebugInfo() {
+async function renderDebugInfo() {
   const redirectUri = window.location.origin + window.location.pathname;
   const hrefEl = document.getElementById("debug-href");
   const originEl = document.getElementById("debug-origin");
@@ -273,10 +315,27 @@ function renderDebugInfo() {
 
   const versionEl = document.getElementById("debug-version");
   if (versionEl) versionEl.textContent = `app version: ${appJson.version}`;
+
+  const geoEl = document.getElementById("debug-geo");
+  if (geoEl) {
+    const hasApi = "geolocation" in navigator;
+    if (!hasApi) {
+      geoEl.textContent = "geo: API unavailable";
+    } else {
+      try {
+        const perm = await navigator.permissions.query({ name: "geolocation" });
+        geoEl.textContent = `geo: ${perm.state}`;
+      } catch {
+        geoEl.textContent = "geo: permissions API unavailable";
+      }
+    }
+  }
+
+  fetchCompanionOnce();
 }
 
 async function main() {
-  renderDebugInfo();
+  await renderDebugInfo();
 
   const callbackToken = foursquare.handleAuthCallback();
   token = callbackToken ?? foursquare.getToken();
