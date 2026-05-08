@@ -12,12 +12,17 @@
       const token = params.get("access_token");
       const state = params.get("state");
 
+      const pre = document.createElement("pre");
+      pre.style.cssText = "font-size:11px;word-break:break-all;white-space:pre-wrap;margin-top:8px";
+      pre.textContent = "hash: " + (window.location.hash || "(empty)") +
+        "\ntoken: " + (token || "missing") +
+        "\nstate: " + (state || "missing");
+      document.body.appendChild(pre);
+
       if (token && state && state.startsWith("http://127.0.0.1:")) {
         window.location.href = state + "#access_token=" + token;
       } else {
-        document.querySelector("p").textContent =
-          "Authentication failed. token=" + (token ? "ok" : "missing") +
-          " state=" + (state || "missing");
+        document.querySelector("p").textContent = "Authentication failed.";
       }
     </script>
   </body>
