@@ -254,18 +254,35 @@ function errorMessage(err: unknown): string {
 
 // --- Main ---
 
+function renderDebugInfo() {
+  const redirectUri = window.location.origin + window.location.pathname;
+  const hrefEl = document.getElementById("debug-href");
+  const originEl = document.getElementById("debug-origin");
+  const redirectEl = document.getElementById("debug-redirect");
+  if (hrefEl) hrefEl.textContent = `href: ${window.location.href}`;
+  if (originEl) originEl.textContent = `origin: ${window.location.origin}`;
+  if (redirectEl) redirectEl.textContent = `redirect_uri: ${redirectUri}`;
+}
+
 async function main() {
-  const callbackToken = foursquare.handleAuthCallback();
-  if (callbackToken) {
-    token = callbackToken;
-  } else {
-    token = foursquare.getToken();
-  }
+  renderDebugInfo();
+  token = foursquare.getToken();
 
   if (!token) {
     showLogin();
-    loginBtn.addEventListener("click", () => {
-      window.location.href = foursquare.getAuthUrl(FOURSQUARE_CLIENT_ID);
+    loginBtn.addEventListener("click", async () => {
+      loginBtn.setAttribute("disabled", "true");
+      setStatus("Opening login...");
+      try {
+        token = await foursquare.openAuthPopup(FOURSQUARE_CLIENT_ID);
+        showApp();
+        await initGlasses();
+        await loadVenues();
+      } catch (err: unknown) {
+        loginBtn.removeAttribute("disabled");
+        const msg = err instanceof Error ? err.message : String(err);
+        setStatus(`Login failed: ${msg}`);
+      }
     });
     return;
   }

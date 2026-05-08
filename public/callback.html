@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Authenticating...</title>
+  </head>
+  <body>
+    <p>Authenticating, please wait...</p>
+    <script>
+      const hash = window.location.hash.slice(1);
+      const params = new URLSearchParams(hash);
+      const token = params.get("access_token");
+      if (token && window.opener) {
+        window.opener.postMessage({ access_token: token }, "*");
+        window.close();
+      } else {
+        document.querySelector("p").textContent = "Authentication failed. You can close this window.";
+      }
+    </script>
+  </body>
+</html>

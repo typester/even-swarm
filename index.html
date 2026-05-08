@@ -22,6 +22,20 @@
       #login-section { text-align: center; }
       #login-section p { color: #888; font-size: 0.85rem; margin-bottom: 16px; }
 
+      #debug-info {
+        margin-top: 24px;
+        padding: 12px;
+        background: #111;
+        border: 1px solid #333;
+        border-radius: 8px;
+        font-size: 0.7rem;
+        color: #666;
+        text-align: left;
+        word-break: break-all;
+        max-width: 340px;
+      }
+      #debug-info strong { color: #888; display: block; margin-bottom: 4px; }
+
       .btn {
         display: inline-block;
         padding: 12px 24px;
@@ -82,6 +96,12 @@
     <div id="login-section">
       <p>Connect your Foursquare account to check in from your glasses.</p>
       <button id="login-btn" class="btn btn-primary">Login with Foursquare</button>
+      <div id="debug-info">
+        <strong>Debug</strong>
+        <div id="debug-href"></div>
+        <div id="debug-origin"></div>
+        <div id="debug-redirect"></div>
+      </div>
     </div>
 
     <div id="app-section">

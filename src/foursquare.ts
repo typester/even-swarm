@@ -2,26 +2,45 @@ const API_BASE = "https://api.foursquare.com/v2";
 const API_VERSION = "20231231";
 const TOKEN_KEY = "foursquare_access_token";
 
+const REDIRECT_URI = "https://typester.github.io/even-swarm/callback.html";
+
 export function getAuthUrl(clientId: string): string {
-  const redirectUri = window.location.origin + window.location.pathname;
   const params = new URLSearchParams({
     client_id: clientId,
     response_type: "token",
-    redirect_uri: redirectUri,
+    redirect_uri: REDIRECT_URI,
   });
   return `https://foursquare.com/oauth2/authenticate?${params}`;
 }
 
-export function handleAuthCallback(): string | null {
-  const hash = window.location.hash;
-  if (!hash) return null;
-  const params = new URLSearchParams(hash.slice(1));
-  const token = params.get("access_token");
-  if (token) {
-    storeToken(token);
-    history.replaceState(null, "", window.location.pathname);
-  }
-  return token;
+export function openAuthPopup(clientId: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const url = getAuthUrl(clientId);
+    const popup = window.open(url, "foursquare_auth", "width=600,height=700");
+
+    if (!popup) {
+      reject(new Error("Popup blocked"));
+      return;
+    }
+
+    const onMessage = (e: MessageEvent) => {
+      if (e.data?.access_token) {
+        window.removeEventListener("message", onMessage);
+        storeToken(e.data.access_token);
+        resolve(e.data.access_token);
+      }
+    };
+    window.addEventListener("message", onMessage);
+
+    // タイムアウト or ポップアップが閉じられた場合
+    const timer = setInterval(() => {
+      if (popup.closed) {
+        clearInterval(timer);
+        window.removeEventListener("message", onMessage);
+        reject(new Error("Auth cancelled"));
+      }
+    }, 500);
+  });
 }
 
 export function getToken(): string | null {
