@@ -115,10 +115,17 @@ async function showGlassesVenueList() {
 
 function getLocation(): Promise<GeolocationPosition> {
   return new Promise((resolve, reject) => {
-    navigator.geolocation.getCurrentPosition(resolve, reject, {
-      enableHighAccuracy: true,
-      timeout: 10000,
-    });
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        navigator.geolocation.clearWatch(watchId);
+        resolve(pos);
+      },
+      (err) => {
+        navigator.geolocation.clearWatch(watchId);
+        reject(err);
+      },
+      { enableHighAccuracy: true, maximumAge: 500, timeout: 15000 }
+    );
   });
 }
 
