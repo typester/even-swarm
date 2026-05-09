@@ -1,0 +1,16 @@
+@import "tailwindcss";
+@import "even-toolkit/web/theme-light.css";
+@import "even-toolkit/web/typography.css";
+@import "even-toolkit/web/utilities.css";
+
+html,
+body,
+#root {
+  min-height: 100vh;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body);
+}

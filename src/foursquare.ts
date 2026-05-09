@@ -37,11 +37,16 @@ export interface Venue {
   address: string;
 }
 
+export interface SearchResult {
+  venues: Venue[];
+  debugText: string;
+}
+
 export async function searchVenues(
   token: string,
   lat: number,
   lng: number
-): Promise<Venue[]> {
+): Promise<SearchResult> {
   const params = new URLSearchParams({
     ll: `${lat},${lng}`,
     oauth_token: token,
@@ -58,13 +63,10 @@ export async function searchVenues(
     throw new Error(data.meta?.errorDetail || "Venue search failed");
   }
 
-  const debugEl = document.getElementById("debug-api-response");
-  if (debugEl) {
-    const curl = `curl "${API_BASE}/venues/search?ll=${lat},${lng}&oauth_token=${token}&v=${API_VERSION}&limit=10&intent=checkin"`;
-    debugEl.textContent = curl + "\n\n" + JSON.stringify(data.response, null, 2);
-  }
+  const curl = `curl "${API_BASE}/venues/search?ll=${lat},${lng}&oauth_token=${token}&v=${API_VERSION}&limit=10&intent=checkin"`;
+  const debugText = curl + "\n\n" + JSON.stringify(data.response, null, 2);
 
-  return data.response.venues.map((v: any) => ({
+  const venues = data.response.venues.map((v: any) => ({
     id: v.id,
     name: v.name,
     category:
@@ -72,6 +74,8 @@ export async function searchVenues(
     distance: v.location?.distance ?? 0,
     address: [v.location?.address, v.location?.city].filter(Boolean).join(", "),
   }));
+
+  return { venues, debugText };
 }
 
 export async function checkin(
