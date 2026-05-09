@@ -2,16 +2,26 @@ import { Button } from "even-toolkit/web/button";
 import { Page } from "even-toolkit/web/page";
 import { Toggle } from "even-toolkit/web/toggle";
 import { SettingsGroup } from "even-toolkit/web/settings-group";
+import { IcChevronBack } from "even-toolkit/web/icons/svg-icons";
 
 interface SettingsScreenProps {
   debugEnabled: boolean;
   onToggle: (enabled: boolean) => void;
   onLogout: () => void;
+  isInEvenHub: boolean;
+  onBack: () => void;
 }
 
-export function SettingsScreen({ debugEnabled, onToggle, onLogout }: SettingsScreenProps) {
+export function SettingsScreen({ debugEnabled, onToggle, onLogout, isInEvenHub, onBack }: SettingsScreenProps) {
   return (
     <Page>
+      {isInEvenHub && (
+        <div className="flex justify-start px-4 pt-2">
+          <Button size="icon" variant="ghost" onClick={onBack} aria-label="Back">
+            <IcChevronBack width={20} height={20} />
+          </Button>
+        </div>
+      )}
       <div className="px-4 py-4">
         <SettingsGroup label="Debug">
           <div className="flex items-center justify-between px-4 py-3">

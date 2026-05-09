@@ -14,6 +14,10 @@ import { SettingsScreen } from "./screens/SettingsScreen";
 
 const DEBUG_KEY = "swarm-debug-enabled";
 
+function detectInEvenHub(): boolean {
+  return typeof window !== "undefined" && "flutter_inappwebview" in window;
+}
+
 type Screen = "loading" | "login" | "app" | "settings";
 
 export function App() {
@@ -24,6 +28,7 @@ export function App() {
   const [screen, setScreen] = useState<Screen>("loading");
   const [previousScreen, setPreviousScreen] = useState<"login" | "app">("login");
   const [companionStatus, setCompanionStatus] = useState("—");
+  const [isInEvenHub] = useState(detectInEvenHub);
 
   // Step 1: connect glasses bridge (3s timeout)
   useEffect(() => {
@@ -95,31 +100,30 @@ export function App() {
     );
   }
 
-  const headerNode =
-    screen === "settings" ? (
-      <NavHeader
-        title="Settings"
-        left={
-          <Button size="icon" variant="ghost" onClick={goBack} aria-label="Back">
-            <IcChevronBack width={20} height={20} />
-          </Button>
-        }
-      />
-    ) : (
-      <NavHeader
-        title="Checkin"
-        right={
-          <Button
-            size="icon"
-            variant="ghost"
-            onClick={openSettings}
-            aria-label="Settings"
-          >
-            <IcSettings width={20} height={20} />
-          </Button>
-        }
-      />
-    );
+  const headerNode = isInEvenHub ? null : screen === "settings" ? (
+    <NavHeader
+      title="Settings"
+      left={
+        <Button size="icon" variant="ghost" onClick={goBack} aria-label="Back">
+          <IcChevronBack width={20} height={20} />
+        </Button>
+      }
+    />
+  ) : (
+    <NavHeader
+      title="Checkin"
+      right={
+        <Button
+          size="icon"
+          variant="ghost"
+          onClick={openSettings}
+          aria-label="Settings"
+        >
+          <IcSettings width={20} height={20} />
+        </Button>
+      }
+    />
+  );
 
   return (
     <AppShell header={headerNode}>
@@ -127,6 +131,8 @@ export function App() {
         <LoginScreen
           debugEnabled={debugEnabled}
           companionStatus={companionStatus}
+          isInEvenHub={isInEvenHub}
+          onOpenSettings={openSettings}
         />
       )}
       {screen === "app" && token && (
@@ -136,6 +142,8 @@ export function App() {
           debugEnabled={debugEnabled}
           onLogout={handleLogout}
           onCompanionStatusChange={setCompanionStatus}
+          isInEvenHub={isInEvenHub}
+          onOpenSettings={openSettings}
         />
       )}
       {screen === "settings" && (
@@ -143,6 +151,8 @@ export function App() {
           debugEnabled={debugEnabled}
           onToggle={handleDebugToggle}
           onLogout={handleLogout}
+          isInEvenHub={isInEvenHub}
+          onBack={goBack}
         />
       )}
     </AppShell>

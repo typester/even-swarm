@@ -1,7 +1,30 @@
 @import "tailwindcss";
+@source "../node_modules/even-toolkit/dist";
 @import "even-toolkit/web/theme-light.css";
 @import "even-toolkit/web/typography.css";
 @import "even-toolkit/web/utilities.css";
+
+@theme inline {
+  --color-text: #232323;
+  --color-text-dim: #7b7b7b;
+  --color-text-muted: #7b7b7b;
+  --color-text-highlight: #fff;
+  --color-bg: #eee;
+  --color-surface: #fff;
+  --color-surface-light: #f6f6f6;
+  --color-surface-lighter: #e4e4e4;
+  --color-border: #e4e4e4;
+  --color-border-light: #eee;
+  --color-accent: #232323;
+  --color-accent-alpha: rgba(35, 35, 35, 0.08);
+  --color-accent-warning: #fef991;
+  --color-positive: #4bb956;
+  --color-positive-alpha: rgba(75, 185, 86, 0.15);
+  --color-negative: #ff453a;
+  --color-negative-alpha: rgba(255, 69, 58, 0.15);
+  --color-overlay: rgba(0, 0, 0, 0.5);
+  --color-input-bg: rgba(35, 35, 35, 0.08);
+}
 
 html,
 body,

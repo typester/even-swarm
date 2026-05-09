@@ -3,6 +3,8 @@ import { EmptyState } from "even-toolkit/web/empty-state";
 import { ListItem } from "even-toolkit/web/list-item";
 import { Loading } from "even-toolkit/web/loading";
 import { Page } from "even-toolkit/web/page";
+import { Button } from "even-toolkit/web/button";
+import { IcSettings } from "even-toolkit/web/icons/svg-icons";
 import type { EvenAppBridge } from "@evenrealities/even_hub_sdk";
 import { useGlasses } from "../hooks/useGlasses";
 import { getLocation, setCompanionStatusHandler } from "../location";
@@ -30,6 +32,8 @@ interface AppScreenProps {
   debugEnabled: boolean;
   onLogout: () => void;
   onCompanionStatusChange: (s: string) => void;
+  isInEvenHub: boolean;
+  onOpenSettings: () => void;
 }
 
 export function AppScreen({
@@ -38,6 +42,8 @@ export function AppScreen({
   debugEnabled,
   onLogout,
   onCompanionStatusChange,
+  isInEvenHub,
+  onOpenSettings,
 }: AppScreenProps) {
   const [appState, setAppState] = useState<AppState>("idle");
   const [venues, setVenues] = useState<Venue[]>([]);
@@ -159,6 +165,14 @@ export function AppScreen({
 
   return (
     <Page>
+      {isInEvenHub && (
+        <div className="flex justify-end px-4 pt-2">
+          <Button size="icon" variant="ghost" onClick={onOpenSettings} aria-label="Settings">
+            <IcSettings width={20} height={20} />
+          </Button>
+        </div>
+      )}
+
       {(appState === "idle" || appState === "loading") && (
         <div className="flex justify-center py-8">
           <Loading />
