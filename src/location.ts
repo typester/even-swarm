@@ -1,6 +1,8 @@
+import { log } from "./log";
+
 export type LatLng = { latitude: number; longitude: number };
 
-const COMPANION_URL = "http://127.0.0.1:38080/location";
+const COMPANION_URL = "http://127.0.0.1:44423/location";
 
 let _onCompanionStatus: ((s: string) => void) | null = null;
 
@@ -16,9 +18,16 @@ function setCompanionStatus(s: string) {
 
 export async function getLocation(useCompanionApp: boolean): Promise<LatLng> {
   if (useCompanionApp) {
-    const res = await fetch(COMPANION_URL, {
-      signal: AbortSignal.timeout(5000),
-    });
+    log(`[location] fetching ${COMPANION_URL}`);
+    let res: Response;
+    try {
+      res = await fetch(COMPANION_URL, {
+        signal: AbortSignal.timeout(5000),
+      });
+    } catch (e) {
+      log(`[location] fetch error: ${String(e)}`);
+      throw e;
+    }
     if (res.ok) {
       const data = (await res.json()) as LatLng;
       setCompanionStatus("ok");
