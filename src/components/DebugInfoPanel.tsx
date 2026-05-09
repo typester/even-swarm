@@ -23,7 +23,7 @@ export function DebugInfoPanel({ companionStatus }: DebugInfoPanelProps) {
     window.location.origin + window.location.pathname;
 
   return (
-    <div className="mt-6 p-3 bg-surface-light border border-border rounded-[6px] font-mono text-xs text-text-dim break-all">
+    <div className="mt-6 p-3 bg-surface-light border border-border rounded-[6px] font-mono text-detail text-text-dim break-all">
       <div className="font-semibold text-text-dim mb-1">
         Debug
       </div>

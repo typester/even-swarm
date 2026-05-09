@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
+import { AppShell } from "even-toolkit/web";
 import { Button } from "even-toolkit/web/button";
+import { Loading } from "even-toolkit/web/loading";
 import { NavHeader } from "even-toolkit/web/nav-header";
 import { IcSettings, IcChevronBack } from "even-toolkit/web/icons/svg-icons";
 import { waitForEvenAppBridge, type EvenAppBridge } from "@evenrealities/even_hub_sdk";
@@ -45,13 +47,11 @@ export function App() {
     if (!bridgeReady) return;
 
     async function init(b: EvenAppBridge | null) {
-      // Load debug mode
       const debugRaw = await storageGet(DEBUG_KEY, b);
       const debug = debugRaw === "true";
       setDebugEnabled(debug);
       setDebugLogEnabled(debug);
 
-      // Handle OAuth callback first
       const callbackToken = handleAuthCallback();
       if (callbackToken) {
         await storageSet(TOKEN_KEY, callbackToken, b);
@@ -60,7 +60,6 @@ export function App() {
         return;
       }
 
-      // Load persisted token
       const saved = await storageGet(TOKEN_KEY, b);
       setToken(saved);
       setScreen(saved ? "app" : "login");
@@ -88,14 +87,13 @@ export function App() {
     setDebugLogEnabled(enabled);
   };
 
-  const mainTitle = (
-    <div>
-      <div className="text-large-title">Checkin</div>
-      <div className="text-detail text-text-dim">
-        Swarm check-in for Even G2
+  if (screen === "loading") {
+    return (
+      <div className="h-dvh flex items-center justify-center bg-bg">
+        <Loading />
       </div>
-    </div>
-  );
+    );
+  }
 
   const headerNode =
     screen === "settings" ? (
@@ -109,7 +107,7 @@ export function App() {
       />
     ) : (
       <NavHeader
-        title={mainTitle}
+        title="Checkin"
         right={
           <Button
             size="icon"
@@ -123,44 +121,30 @@ export function App() {
       />
     );
 
-  if (screen === "loading") {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-subtitle text-[color:var(--color-text-dim)]">
-          Loading...
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="min-h-screen flex flex-col">
-      <div className="sticky top-0 z-10 border-b border-border">
-        {headerNode}
-      </div>
-      <div className="flex-1 overflow-y-auto max-w-lg mx-auto w-full">
-        {screen === "login" && (
-          <LoginScreen
-            debugEnabled={debugEnabled}
-            companionStatus={companionStatus}
-          />
-        )}
-        {screen === "app" && token && (
-          <AppScreen
-            token={token}
-            bridge={bridge}
-            debugEnabled={debugEnabled}
-            onLogout={handleLogout}
-            onCompanionStatusChange={setCompanionStatus}
-          />
-        )}
-        {screen === "settings" && (
-          <SettingsScreen
-            debugEnabled={debugEnabled}
-            onToggle={handleDebugToggle}
-          />
-        )}
-      </div>
-    </div>
+    <AppShell header={headerNode}>
+      {screen === "login" && (
+        <LoginScreen
+          debugEnabled={debugEnabled}
+          companionStatus={companionStatus}
+        />
+      )}
+      {screen === "app" && token && (
+        <AppScreen
+          token={token}
+          bridge={bridge}
+          debugEnabled={debugEnabled}
+          onLogout={handleLogout}
+          onCompanionStatusChange={setCompanionStatus}
+        />
+      )}
+      {screen === "settings" && (
+        <SettingsScreen
+          debugEnabled={debugEnabled}
+          onToggle={handleDebugToggle}
+          onLogout={handleLogout}
+        />
+      )}
+    </AppShell>
   );
 }

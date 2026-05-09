@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Button } from "even-toolkit/web/button";
 import { EmptyState } from "even-toolkit/web/empty-state";
 import { ListItem } from "even-toolkit/web/list-item";
 import { Loading } from "even-toolkit/web/loading";
+import { Page } from "even-toolkit/web/page";
 import type { EvenAppBridge } from "@evenrealities/even_hub_sdk";
 import { useGlasses } from "../hooks/useGlasses";
 import { getLocation, setCompanionStatusHandler } from "../location";
 import { log, setLogHandler } from "../log";
 import { searchVenues, checkin, type Venue } from "../foursquare";
 
-type AppState = "loading" | "error" | "ready" | "checking-in";
+type AppState = "idle" | "loading" | "error" | "ready" | "checking-in";
 
 function formatDistance(meters: number): string {
   return meters < 1000 ? `${meters}m` : `${(meters / 1000).toFixed(1)}km`;
@@ -39,9 +39,9 @@ export function AppScreen({
   onLogout,
   onCompanionStatusChange,
 }: AppScreenProps) {
-  const [appState, setAppState] = useState<AppState>("loading");
+  const [appState, setAppState] = useState<AppState>("idle");
   const [venues, setVenues] = useState<Venue[]>([]);
-  const [status, setStatus] = useState("Loading...");
+  const [status, setStatus] = useState("");
   const [debugLog, setDebugLog] = useState<string[]>([]);
   const [debugApiResponse, setDebugApiResponse] = useState("");
 
@@ -51,7 +51,6 @@ export function AppScreen({
   venuesRef.current = venues;
   const glassesRef = useRef<ReturnType<typeof useGlasses> | null>(null);
 
-  // Forward companion status up for debug panel
   useEffect(() => {
     setCompanionStatusHandler(onCompanionStatusChange);
     return () => {
@@ -59,7 +58,6 @@ export function AppScreen({
     };
   }, [onCompanionStatusChange]);
 
-  // Register log handler for debug panel
   useEffect(() => {
     setLogHandler((msg) => {
       const entry = `${new Date().toISOString().slice(11, 23)} ${msg}`;
@@ -77,13 +75,11 @@ export function AppScreen({
     log("[loadVenues] start");
 
     setAppState("loading");
-    setStatus("Getting location...");
     await glassesRef.current?.showText("Getting location...");
 
     try {
       const { latitude, longitude } = await getLocation();
 
-      setStatus("Searching venues...");
       await glassesRef.current?.showText("Searching venues...");
 
       const { venues: found, debugText } = await searchVenues(
@@ -102,7 +98,7 @@ export function AppScreen({
 
       setAppState("ready");
       setVenues(found);
-      setStatus(`Found ${found.length} venues — tap to check in`);
+      setStatus("");
       await glassesRef.current?.showList(
         found.map((v) => `${v.name} | ${formatDistance(v.distance)}`),
         "venues"
@@ -114,7 +110,7 @@ export function AppScreen({
       }
       const msg = errorMessage(err);
       setAppState("error");
-      setStatus(`Error: ${msg}`);
+      setStatus(msg);
       await glassesRef.current?.showList([`${msg} | Tap to retry`], "error");
     }
   }, [token, onLogout]);
@@ -156,26 +152,14 @@ export function AppScreen({
   });
   glassesRef.current = glasses;
 
-  // Initial venue load on mount
   useEffect(() => {
     loadVenues();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
-    <div className="px-4 py-4">
-      {/* Status + logout row */}
-      <div className="flex items-center justify-between mb-4">
-        <span className="text-subtitle text-text-dim">
-          {status}
-        </span>
-        <Button size="sm" variant="ghost" onClick={onLogout}>
-          Logout
-        </Button>
-      </div>
-
-      {/* Main content */}
-      {appState === "loading" && (
+    <Page>
+      {(appState === "idle" || appState === "loading") && (
         <div className="flex justify-center py-8">
           <Loading />
         </div>
@@ -184,13 +168,17 @@ export function AppScreen({
       {appState === "error" && (
         <EmptyState
           title="Couldn't load venues"
-          description={status.replace("Error: ", "")}
+          description={status}
           action={{ label: "Retry", onClick: loadVenues }}
         />
       )}
 
+      {appState === "checking-in" && status && (
+        <div className="text-detail text-text-dim text-center py-2 px-4">{status}</div>
+      )}
+
       {(appState === "ready" || appState === "checking-in") && (
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col">
           {venues.map((v, i) => (
             <ListItem
               key={v.id}
@@ -202,9 +190,8 @@ export function AppScreen({
         </div>
       )}
 
-      {/* Debug panels — only visible when debugEnabled */}
       {debugEnabled && debugLog.length > 0 && (
-        <div className="mt-6 max-h-48 overflow-y-auto bg-surface-light rounded-[6px] p-2 font-mono text-[10px] text-positive break-all scrollbar-hide">
+        <div className="mx-4 mt-6 max-h-48 overflow-y-auto bg-surface-light rounded-[6px] p-2 font-mono text-detail text-positive break-all scrollbar-hide">
           {debugLog.map((entry, i) => (
             <div key={i}>{entry}</div>
           ))}
@@ -212,10 +199,10 @@ export function AppScreen({
       )}
 
       {debugEnabled && debugApiResponse && (
-        <pre className="mt-4 text-[10px] text-text-dim whitespace-pre-wrap break-all font-mono">
+        <pre className="mx-4 mt-4 text-detail text-text-dim whitespace-pre-wrap break-all font-mono">
           {debugApiResponse}
         </pre>
       )}
-    </div>
+    </Page>
   );
 }
