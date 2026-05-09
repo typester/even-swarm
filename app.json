@@ -1,8 +1,8 @@
 {
-  "package_id": "com.typester.checkin",
+  "package_id": "dev.typester.checkin",
   "edition": "202601",
   "name": "Checkin",
-  "version": "0.0.24",
+  "version": "0.0.28",
   "min_app_version": "2.0.0",
   "min_sdk_version": "0.0.10",
   "entrypoint": "index.html",

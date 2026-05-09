@@ -27,6 +27,23 @@ const venueListEl = document.getElementById("venue-list")!;
 // App state
 type AppState = "loading" | "error" | "ready" | "checking-in";
 let appState: AppState = "error";
+
+// Debug log
+const debugLogEl = document.getElementById("debug-log");
+function log(msg: string) {
+  console.log(msg);
+  if (debugLogEl) {
+    const line = document.createElement("div");
+    line.textContent = `${new Date().toISOString().slice(11, 23)} ${msg}`;
+    debugLogEl.prepend(line);
+    while (debugLogEl.children.length > 50) debugLogEl.lastChild?.remove();
+  }
+}
+
+function setState(s: AppState) {
+  log(`[state] ${appState} → ${s}`);
+  appState = s;
+}
 let venues: foursquare.Venue[] = [];
 let token: string | null = null;
 let bridge: EvenAppBridge | null = null;
@@ -203,10 +220,14 @@ async function getLocation(): Promise<LatLng> {
 }
 
 async function loadVenues() {
-  if (!token) return;
-  if (appState === "loading" || appState === "checking-in") return;
+  if (!token) { log("[loadVenues] skip: no token"); return; }
+  if (appState === "loading" || appState === "checking-in") {
+    log(`[loadVenues] skip: state=${appState}`);
+    return;
+  }
+  log("[loadVenues] start");
 
-  appState = "loading";
+  setState("loading");
   hideRetry();
   setStatus("Getting location...");
   await showGlassesText("Getting location...");
@@ -220,14 +241,14 @@ async function loadVenues() {
     venues = await foursquare.searchVenues(token, latitude, longitude);
 
     if (venues.length === 0) {
-      appState = "error";
+      setState("error");
       setStatus("No venues found nearby");
       showRetry();
       await showGlassesRetry("No venues found");
       return;
     }
 
-    appState = "ready";
+    setState("ready");
     setStatus(`Found ${venues.length} venues — tap to check in`);
     renderPhoneVenues();
     await showGlassesVenueList();
@@ -239,7 +260,7 @@ async function loadVenues() {
       return;
     }
     const msg = errorMessage(err);
-    appState = "error";
+    setState("error");
     setStatus(`Error: ${msg}`);
     showRetry();
     await showGlassesRetry(msg);
@@ -249,7 +270,7 @@ async function loadVenues() {
 async function doCheckin(index: number) {
   if (!token || !venues[index] || appState !== "ready") return;
 
-  appState = "checking-in";
+  setState("checking-in");
   const venue = venues[index];
   setStatus(`Checking in to ${venue.name}...`);
   await showGlassesText(`Checking in...\n${venue.name}`);
@@ -259,12 +280,13 @@ async function doCheckin(index: number) {
     setStatus(`Checked in to ${name}!`);
     await showGlassesText(`Checked in!\n${name}`);
 
-    setTimeout(() => bridge?.shutDownPageContainer(0), 2000);
-    checkinReloadTimeout = setTimeout(() => window.location.reload(), 2000);
+    log("[doCheckin] scheduling shutdown(0) + reload at +2000ms");
+    setTimeout(() => { log("[timer] shutDownPageContainer(0)"); bridge?.shutDownPageContainer(0); }, 2000);
+    checkinReloadTimeout = setTimeout(() => { log("[timer] window.location.reload()"); window.location.reload(); }, 2000);
   } catch (err: unknown) {
     console.error("doCheckin error:", err);
     const msg = errorMessage(err);
-    appState = "ready";
+    setState("ready");
     setStatus(`Check-in failed: ${msg}`);
     await showGlassesText(`Failed:\n${msg}`);
   }
@@ -319,30 +341,45 @@ async function setupGlassesUI() {
   await bridge.createStartUpPageContainer(startPage);
 
   bridge.onEvenHubEvent((event) => {
+    log(`[event] raw=${JSON.stringify(event)}`);
+
     if (event.listEvent) {
       const evt = event.listEvent;
-      if (
-        (evt.eventType === OsEventTypeList.CLICK_EVENT ||
-          evt.eventType === undefined) &&
-        evt.currentSelectItemIndex !== undefined
-      ) {
-        if (appState === "error") {
+      log(`[listEvent] container=${evt.containerName} eventType=${evt.eventType} idx=${evt.currentSelectItemIndex} appState=${appState}`);
+
+      const isClick =
+        evt.eventType === OsEventTypeList.CLICK_EVENT ||
+        evt.eventType === undefined;
+
+      if (isClick) {
+        // Protobuf omits zero-valued numeric fields, so index 0 arrives as undefined.
+        const idx = evt.currentSelectItemIndex ?? 0;
+
+        if (evt.containerName === "error") {
+          log(`[listEvent] error retry → loadVenues()`);
           loadVenues();
-        } else if (appState === "ready") {
-          doCheckin(evt.currentSelectItemIndex);
+        } else if (evt.containerName === "venues") {
+          log(`[listEvent] venue selected idx=${idx} → doCheckin()`);
+          doCheckin(idx);
+        } else {
+          log(`[listEvent] no match (container=${evt.containerName})`);
         }
-        // ignore taps during "loading" or "checking-in"
+      } else {
+        log(`[listEvent] not a click event`);
       }
     }
     if (event.sysEvent) {
       const sys = event.sysEvent;
+      log(`[sysEvent] eventType=${sys.eventType} appState=${appState}`);
       if (sys.eventType === OsEventTypeList.DOUBLE_CLICK_EVENT) {
+        log(`[sysEvent] DOUBLE_CLICK → shutDownPageContainer(1), reloadTimeout=${checkinReloadTimeout !== null}`);
         if (checkinReloadTimeout) {
           clearTimeout(checkinReloadTimeout);
           checkinReloadTimeout = null;
         }
         bridge?.shutDownPageContainer(1);
       } else if (sys.eventType === OsEventTypeList.FOREGROUND_ENTER_EVENT) {
+        log(`[sysEvent] FOREGROUND_ENTER → loadVenues()`);
         loadVenues();
       }
     }
@@ -427,7 +464,7 @@ async function main() {
     await clearToken();
     window.location.reload();
   });
-  retryBtn.addEventListener("click", () => loadVenues());
+  retryBtn.addEventListener("click", () => { log("[retryBtn] clicked"); loadVenues(); });
 
   await setupGlassesUI();
   await loadVenues();
