@@ -9,8 +9,8 @@
   "permissions": [
     {
       "name": "network",
-      "desc": "Fetch GPS coordinates from the local Even Companion app.",
-      "whitelist": ["http://127.0.0.1:38080"]
+      "desc": "Fetch GPS coordinates from the local Even Companion app and call Foursquare API for venue search and check-in.",
+      "whitelist": ["http://127.0.0.1:38080", "https://api.foursquare.com"]
     },
     { "name": "location", "desc": "Detect nearby venues for Swarm check-in." }
   ],
