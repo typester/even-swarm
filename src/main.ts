@@ -19,13 +19,18 @@ const loginSection = document.getElementById("login-section")!;
 const appSection = document.getElementById("app-section")!;
 const loginBtn = document.getElementById("login-btn")!;
 const logoutBtn = document.getElementById("logout-btn")!;
+const retryRowEl = document.getElementById("retry-row")!;
+const retryBtn = document.getElementById("retry-btn")!;
 const statusEl = document.getElementById("status")!;
 const venueListEl = document.getElementById("venue-list")!;
 
 // App state
+type AppState = "loading" | "error" | "ready" | "checking-in";
+let appState: AppState = "error";
 let venues: foursquare.Venue[] = [];
 let token: string | null = null;
 let bridge: EvenAppBridge | null = null;
+let checkinReloadTimeout: ReturnType<typeof setTimeout> | null = null;
 
 // --- Phone UI ---
 
@@ -43,6 +48,14 @@ function setStatus(text: string) {
   statusEl.textContent = text;
 }
 
+function showRetry() {
+  retryRowEl.style.display = "block";
+}
+
+function hideRetry() {
+  retryRowEl.style.display = "none";
+}
+
 function renderPhoneVenues() {
   venueListEl.innerHTML = venues
     .map(
@@ -50,6 +63,7 @@ function renderPhoneVenues() {
         `<div class="venue" data-index="${i}">
           <strong>${escapeHtml(v.name)}</strong>
           <span>${escapeHtml(v.category)} · ${formatDistance(v.distance)}</span>
+          ${v.address ? `<span style="color:#666;font-size:0.75rem">${escapeHtml(v.address)}</span>` : ""}
         </div>`
     )
     .join("");
@@ -85,13 +99,21 @@ async function showGlassesText(text: string) {
 
 async function showGlassesVenueList() {
   if (!bridge || venues.length === 0) return;
+  try {
+    await _showGlassesVenueList();
+  } catch (err) {
+    console.error("showGlassesVenueList error:", err);
+    await showGlassesText(`List error:\n${errorMessage(err)}`);
+  }
+}
 
+async function _showGlassesVenueList() {
   const itemContainer = new ListItemContainerProperty();
   itemContainer.itemCount = venues.length;
   itemContainer.itemWidth = 576;
   itemContainer.isItemSelectBorderEn = 1;
-  itemContainer.itemName = venues.map(
-    (v) => `${v.name}  ${formatDistance(v.distance)}`
+  itemContainer.itemName = venues.map((v) =>
+    `${v.name} | ${formatDistance(v.distance)}`
   );
 
   const lc = new ListContainerProperty();
@@ -108,78 +130,84 @@ async function showGlassesVenueList() {
   page.containerTotalNum = 1;
   page.listObject = [lc];
 
+  await bridge!.rebuildPageContainer(page);
+}
+
+async function showGlassesRetry(errorMsg: string) {
+  if (!bridge) return;
+
+  const itemContainer = new ListItemContainerProperty();
+  itemContainer.itemCount = 1;
+  itemContainer.itemWidth = 576;
+  itemContainer.isItemSelectBorderEn = 1;
+  itemContainer.itemName = [`${errorMsg} | Tap to retry`];
+
+  const lc = new ListContainerProperty();
+  lc.containerID = 1;
+  lc.containerName = "error";
+  lc.xPosition = 0;
+  lc.yPosition = 0;
+  lc.width = 576;
+  lc.height = 288;
+  lc.isEventCapture = 1;
+  lc.itemContainer = itemContainer;
+
+  const page = new RebuildPageContainer();
+  page.containerTotalNum = 1;
+  page.listObject = [lc];
+
   await bridge.rebuildPageContainer(page);
 }
 
 // --- Core logic ---
 
+
 type LatLng = { latitude: number; longitude: number };
 
 const COMPANION_URL = "http://127.0.0.1:38080/location";
-const COMPANION_RETRY_MS = 1000;
-const COMPANION_RETRY_MAX = 15;
 
 const companionDebugEl = document.getElementById("debug-companion");
 function setCompanionDebug(s: string) {
   if (companionDebugEl) companionDebugEl.textContent = `companion: ${s}`;
 }
 
-async function fetchCompanionOnce(): Promise<LatLng | "no-fix" | "unreachable"> {
+async function getLocation(): Promise<LatLng> {
   try {
-    const res = await fetch(COMPANION_URL, { signal: AbortSignal.timeout(2000) });
+    const res = await fetch(COMPANION_URL, { signal: AbortSignal.timeout(5000) });
     if (res.ok) {
       const data = (await res.json()) as LatLng;
       setCompanionDebug("ok");
       return { latitude: data.latitude, longitude: data.longitude };
     }
     if (res.status === 503) {
-      setCompanionDebug("503 waiting for fix");
-      return "no-fix";
+      setCompanionDebug("503 no fix");
+      throw new Error("No GPS fix available");
     }
     setCompanionDebug(`http ${res.status}`);
-    return "unreachable";
+    throw new Error(`Companion returned ${res.status}`);
   } catch (err) {
-    const name = err instanceof Error ? err.name : "Error";
-    setCompanionDebug(`unreachable (${name})`);
-    return "unreachable";
-  }
-}
-
-async function getLocation(): Promise<LatLng> {
-  const first = await fetchCompanionOnce();
-  if (typeof first === "object") return first;
-
-  if (first === "no-fix") {
-    setStatus("Waiting for GPS fix…");
-    await showGlassesText("Waiting for GPS fix…");
-    for (let i = 0; i < COMPANION_RETRY_MAX; i++) {
-      await new Promise((r) => setTimeout(r, COMPANION_RETRY_MS));
-      const r = await fetchCompanionOnce();
-      if (typeof r === "object") return r;
-      if (r === "unreachable") throw new Error("companion stopped responding while waiting for GPS fix");
+    if (err instanceof Error && err.message !== "No GPS fix available" && !err.message.startsWith("Companion")) {
+      // Companion unreachable → fall back to navigator.geolocation (desktop dev / simulator).
+      const name = err.name;
+      setCompanionDebug(`unreachable (${name}), trying geolocation`);
+      return new Promise((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
+          reject,
+          { enableHighAccuracy: true, timeout: 15000 },
+        );
+      });
     }
-    throw new Error("companion: no GPS fix after 15s");
+    throw err;
   }
-
-  // Genuinely unreachable → fall back to navigator.geolocation (desktop dev / simulator).
-  return new Promise((resolve, reject) => {
-    const watchId = navigator.geolocation.watchPosition(
-      (pos) => {
-        navigator.geolocation.clearWatch(watchId);
-        resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
-      },
-      (err) => {
-        navigator.geolocation.clearWatch(watchId);
-        reject(err);
-      },
-      { enableHighAccuracy: true, maximumAge: 500, timeout: 15000 }
-    );
-  });
 }
 
 async function loadVenues() {
   if (!token) return;
+  if (appState === "loading" || appState === "checking-in") return;
 
+  appState = "loading";
+  hideRetry();
   setStatus("Getting location...");
   await showGlassesText("Getting location...");
 
@@ -192,25 +220,36 @@ async function loadVenues() {
     venues = await foursquare.searchVenues(token, latitude, longitude);
 
     if (venues.length === 0) {
+      appState = "error";
       setStatus("No venues found nearby");
-      await showGlassesText("No venues found");
+      showRetry();
+      await showGlassesRetry("No venues found");
       return;
     }
 
+    appState = "ready";
     setStatus(`Found ${venues.length} venues — tap to check in`);
     renderPhoneVenues();
     await showGlassesVenueList();
   } catch (err: unknown) {
     console.error("loadVenues error:", err);
+    if (err instanceof Error && err.message === "UNAUTHORIZED") {
+      await clearToken();
+      window.location.reload();
+      return;
+    }
     const msg = errorMessage(err);
+    appState = "error";
     setStatus(`Error: ${msg}`);
-    await showGlassesText(`Error:\n${msg}`);
+    showRetry();
+    await showGlassesRetry(msg);
   }
 }
 
 async function doCheckin(index: number) {
-  if (!token || !venues[index]) return;
+  if (!token || !venues[index] || appState !== "ready") return;
 
+  appState = "checking-in";
   const venue = venues[index];
   setStatus(`Checking in to ${venue.name}...`);
   await showGlassesText(`Checking in...\n${venue.name}`);
@@ -220,30 +259,49 @@ async function doCheckin(index: number) {
     setStatus(`Checked in to ${name}!`);
     await showGlassesText(`Checked in!\n${name}`);
 
-    // Exit app after brief confirmation
-    setTimeout(() => {
-      bridge?.shutDownPageContainer(0);
-    }, 2000);
+    setTimeout(() => bridge?.shutDownPageContainer(0), 2000);
+    checkinReloadTimeout = setTimeout(() => window.location.reload(), 2000);
   } catch (err: unknown) {
     console.error("doCheckin error:", err);
     const msg = errorMessage(err);
+    appState = "ready";
     setStatus(`Check-in failed: ${msg}`);
     await showGlassesText(`Failed:\n${msg}`);
   }
 }
 
+// --- Token storage (bridge-backed with localStorage fallback) ---
+
+async function saveToken(t: string) {
+  localStorage.setItem(foursquare.TOKEN_KEY, t);
+  if (bridge) await bridge.setLocalStorage(foursquare.TOKEN_KEY, t);
+}
+
+async function loadToken(): Promise<string | null> {
+  if (bridge) {
+    const t = await bridge.getLocalStorage(foursquare.TOKEN_KEY);
+    if (t) return t;
+  }
+  return localStorage.getItem(foursquare.TOKEN_KEY);
+}
+
+async function clearToken() {
+  localStorage.removeItem(foursquare.TOKEN_KEY);
+  if (bridge) await bridge.setLocalStorage(foursquare.TOKEN_KEY, "");
+}
+
 // --- Glasses bridge init ---
 
-async function initGlasses() {
+async function connectBridge() {
   bridge = await Promise.race([
     waitForEvenAppBridge().then((b) => b as EvenAppBridge | null),
     new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000)),
   ]);
+  if (!bridge) console.log("Even Hub bridge not available, phone-only mode");
+}
 
-  if (!bridge) {
-    console.log("Even Hub bridge not available, phone-only mode");
-    return;
-  }
+async function setupGlassesUI() {
+  if (!bridge) return;
 
   const tc = new TextContainerProperty();
   tc.containerID = 1;
@@ -261,7 +319,6 @@ async function initGlasses() {
   await bridge.createStartUpPageContainer(startPage);
 
   bridge.onEvenHubEvent((event) => {
-    // List item click → check in
     if (event.listEvent) {
       const evt = event.listEvent;
       if (
@@ -269,13 +326,25 @@ async function initGlasses() {
           evt.eventType === undefined) &&
         evt.currentSelectItemIndex !== undefined
       ) {
-        doCheckin(evt.currentSelectItemIndex);
+        if (appState === "error") {
+          loadVenues();
+        } else if (appState === "ready") {
+          doCheckin(evt.currentSelectItemIndex);
+        }
+        // ignore taps during "loading" or "checking-in"
       }
     }
-
-    // Foreground enter → refresh
-    if (event.sysEvent?.eventType === OsEventTypeList.FOREGROUND_ENTER_EVENT) {
-      loadVenues();
+    if (event.sysEvent) {
+      const sys = event.sysEvent;
+      if (sys.eventType === OsEventTypeList.DOUBLE_CLICK_EVENT) {
+        if (checkinReloadTimeout) {
+          clearTimeout(checkinReloadTimeout);
+          checkinReloadTimeout = null;
+        }
+        bridge?.shutDownPageContainer(1);
+      } else if (sys.eventType === OsEventTypeList.FOREGROUND_ENTER_EVENT) {
+        loadVenues();
+      }
     }
   });
 }
@@ -331,14 +400,19 @@ async function renderDebugInfo() {
     }
   }
 
-  fetchCompanionOnce();
 }
 
 async function main() {
   await renderDebugInfo();
+  await connectBridge();
 
   const callbackToken = foursquare.handleAuthCallback();
-  token = callbackToken ?? foursquare.getToken();
+  if (callbackToken) {
+    token = callbackToken;
+    await saveToken(token);
+  } else {
+    token = await loadToken();
+  }
 
   if (!token) {
     showLogin();
@@ -349,12 +423,13 @@ async function main() {
   }
 
   showApp();
-  logoutBtn.addEventListener("click", () => {
-    foursquare.clearToken();
+  logoutBtn.addEventListener("click", async () => {
+    await clearToken();
     window.location.reload();
   });
+  retryBtn.addEventListener("click", () => loadVenues());
 
-  await initGlasses();
+  await setupGlassesUI();
   await loadVenues();
 }
 

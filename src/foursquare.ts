@@ -1,6 +1,6 @@
 const API_BASE = "https://api.foursquare.com/v2";
 const API_VERSION = "20231231";
-const TOKEN_KEY = "foursquare_access_token";
+export const TOKEN_KEY = "foursquare_access_token";
 
 const REDIRECT_URI = "https://typester.github.io/even-swarm/callback.html";
 
@@ -24,22 +24,9 @@ export function handleAuthCallback(): string | null {
   const params = new URLSearchParams(hash.slice(1));
   const token = params.get("access_token");
   if (token) {
-    storeToken(token);
     history.replaceState(null, "", window.location.pathname);
   }
   return token;
-}
-
-export function getToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY);
-}
-
-export function storeToken(token: string): void {
-  localStorage.setItem(TOKEN_KEY, token);
-}
-
-export function clearToken(): void {
-  localStorage.removeItem(TOKEN_KEY);
 }
 
 export interface Venue {
@@ -47,6 +34,7 @@ export interface Venue {
   name: string;
   category: string;
   distance: number;
+  address: string;
 }
 
 export async function searchVenues(
@@ -66,11 +54,14 @@ export async function searchVenues(
   const data = await res.json();
 
   if (data.meta?.code !== 200) {
-    if (data.meta?.code === 401) {
-      clearToken();
-      window.location.reload();
-    }
+    if (data.meta?.code === 401) throw new Error("UNAUTHORIZED");
     throw new Error(data.meta?.errorDetail || "Venue search failed");
+  }
+
+  const debugEl = document.getElementById("debug-api-response");
+  if (debugEl) {
+    const curl = `curl "${API_BASE}/venues/search?ll=${lat},${lng}&oauth_token=${token}&v=${API_VERSION}&limit=10&intent=checkin"`;
+    debugEl.textContent = curl + "\n\n" + JSON.stringify(data.response, null, 2);
   }
 
   return data.response.venues.map((v: any) => ({
@@ -79,6 +70,7 @@ export async function searchVenues(
     category:
       v.categories?.[0]?.shortName || v.categories?.[0]?.name || "",
     distance: v.location?.distance ?? 0,
+    address: [v.location?.address, v.location?.city].filter(Boolean).join(", "),
   }));
 }
 

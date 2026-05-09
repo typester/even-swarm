@@ -19,7 +19,7 @@
         "\nstate: " + (state || "missing");
       document.body.appendChild(pre);
 
-      if (token && state && state.startsWith("http://127.0.0.1:")) {
+      if (token && state && (state.startsWith("http://127.0.0.1:") || state.startsWith("http://localhost:"))) {
         window.location.href = state + "#access_token=" + token;
       } else {
         document.querySelector("p").textContent = "Authentication failed.";

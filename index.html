@@ -64,6 +64,7 @@
         margin-bottom: 16px;
         min-height: 1.2em;
       }
+      #retry-row { text-align: center; margin-bottom: 16px; display: none; }
 
       .venue-list { display: flex; flex-direction: column; gap: 8px; }
       .venue {
@@ -112,7 +113,9 @@
         <span id="status">Loading...</span>
         <button id="logout-btn" class="btn btn-small">Logout</button>
       </div>
+      <div id="retry-row"><button id="retry-btn" class="btn btn-primary">Retry</button></div>
       <div id="venue-list" class="venue-list"></div>
+      <pre id="debug-api-response" style="font-size:10px;color:#666;margin-top:16px;white-space:pre-wrap;word-break:break-all;"></pre>
     </div>
 
     <script type="module" src="/src/main.ts"></script>
