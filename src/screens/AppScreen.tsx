@@ -30,6 +30,7 @@ interface AppScreenProps {
   token: string;
   bridge: EvenAppBridge | null;
   debugEnabled: boolean;
+  useCompanionApp: boolean;
   onLogout: () => void;
   onCompanionStatusChange: (s: string) => void;
   isInEvenHub: boolean;
@@ -40,6 +41,7 @@ export function AppScreen({
   token,
   bridge,
   debugEnabled,
+  useCompanionApp,
   onLogout,
   onCompanionStatusChange,
   isInEvenHub,
@@ -84,7 +86,7 @@ export function AppScreen({
     await glassesRef.current?.showText("Getting location...");
 
     try {
-      const { latitude, longitude } = await getLocation();
+      const { latitude, longitude } = await getLocation(useCompanionApp);
 
       await glassesRef.current?.showText("Searching venues...");
 
@@ -119,7 +121,7 @@ export function AppScreen({
       setStatus(msg);
       await glassesRef.current?.showList([`${msg} | Tap to retry`], "error");
     }
-  }, [token, onLogout]);
+  }, [token, onLogout, useCompanionApp]);
 
   const doCheckin = useCallback(
     async (idx: number) => {

@@ -14,8 +14,8 @@ function setCompanionStatus(s: string) {
   _onCompanionStatus?.(s);
 }
 
-export async function getLocation(): Promise<LatLng> {
-  try {
+export async function getLocation(useCompanionApp: boolean): Promise<LatLng> {
+  if (useCompanionApp) {
     const res = await fetch(COMPANION_URL, {
       signal: AbortSignal.timeout(5000),
     });
@@ -26,30 +26,22 @@ export async function getLocation(): Promise<LatLng> {
     }
     if (res.status === 503) {
       setCompanionStatus("503 no fix");
-      throw new Error("No GPS fix available");
+      throw new Error("GPS signal lost");
     }
     setCompanionStatus(`http ${res.status}`);
     throw new Error(`Companion returned ${res.status}`);
-  } catch (err) {
-    if (
-      err instanceof Error &&
-      err.message !== "No GPS fix available" &&
-      !err.message.startsWith("Companion")
-    ) {
-      const name = err.name;
-      setCompanionStatus(`unreachable (${name}), trying geolocation`);
-      return new Promise((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(
-          (pos) =>
-            resolve({
-              latitude: pos.coords.latitude,
-              longitude: pos.coords.longitude,
-            }),
-          reject,
-          { enableHighAccuracy: true, timeout: 15000 }
-        );
-      });
-    }
-    throw err;
   }
+
+  setCompanionStatus("disabled");
+  return new Promise((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(
+      (pos) =>
+        resolve({
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+        }),
+      reject,
+      { enableHighAccuracy: true, timeout: 15000 }
+    );
+  });
 }

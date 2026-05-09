@@ -13,6 +13,7 @@ import { AppScreen } from "./screens/AppScreen";
 import { SettingsScreen } from "./screens/SettingsScreen";
 
 const DEBUG_KEY = "swarm-debug-enabled";
+const COMPANION_KEY = "swarm-use-companion-app";
 
 function detectInEvenHub(): boolean {
   return typeof window !== "undefined" && "flutter_inappwebview" in window;
@@ -25,6 +26,7 @@ export function App() {
   const [bridgeReady, setBridgeReady] = useState(false);
   const [token, setToken] = useState<string | null>(null);
   const [debugEnabled, setDebugEnabled] = useState(false);
+  const [useCompanionApp, setUseCompanionApp] = useState(false);
   const [screen, setScreen] = useState<Screen>("loading");
   const [previousScreen, setPreviousScreen] = useState<"login" | "app">("login");
   const [companionStatus, setCompanionStatus] = useState("—");
@@ -56,6 +58,9 @@ export function App() {
       const debug = debugRaw === "true";
       setDebugEnabled(debug);
       setDebugLogEnabled(debug);
+
+      const companionRaw = await storageGet(COMPANION_KEY, b);
+      setUseCompanionApp(companionRaw === "true");
 
       const callbackToken = handleAuthCallback();
       if (callbackToken) {
@@ -90,6 +95,11 @@ export function App() {
     await storageSet(DEBUG_KEY, String(enabled), bridge);
     setDebugEnabled(enabled);
     setDebugLogEnabled(enabled);
+  };
+
+  const handleCompanionAppToggle = async (enabled: boolean) => {
+    await storageSet(COMPANION_KEY, String(enabled), bridge);
+    setUseCompanionApp(enabled);
   };
 
   if (screen === "loading") {
@@ -140,6 +150,7 @@ export function App() {
           token={token}
           bridge={bridge}
           debugEnabled={debugEnabled}
+          useCompanionApp={useCompanionApp}
           onLogout={handleLogout}
           onCompanionStatusChange={setCompanionStatus}
           isInEvenHub={isInEvenHub}
@@ -148,6 +159,8 @@ export function App() {
       )}
       {screen === "settings" && (
         <SettingsScreen
+          useCompanionApp={useCompanionApp}
+          onCompanionAppToggle={handleCompanionAppToggle}
           debugEnabled={debugEnabled}
           onToggle={handleDebugToggle}
           onLogout={handleLogout}
