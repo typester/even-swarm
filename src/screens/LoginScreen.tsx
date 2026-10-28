@@ -8,12 +8,11 @@ const FOURSQUARE_CLIENT_ID = import.meta.env.VITE_FOURSQUARE_CLIENT_ID as string
 
 interface LoginScreenProps {
   debugEnabled: boolean;
-  companionStatus: string;
   isInEvenHub: boolean;
   onOpenSettings: () => void;
 }
 
-export function LoginScreen({ debugEnabled, companionStatus, isInEvenHub, onOpenSettings }: LoginScreenProps) {
+export function LoginScreen({ debugEnabled, isInEvenHub, onOpenSettings }: LoginScreenProps) {
   return (
     <Page>
       {isInEvenHub && (
@@ -33,7 +32,7 @@ export function LoginScreen({ debugEnabled, companionStatus, isInEvenHub, onOpen
         >
           Login with Foursquare
         </Button>
-        {debugEnabled && <DebugInfoPanel companionStatus={companionStatus} />}
+        {debugEnabled && <DebugInfoPanel />}
       </div>
     </Page>
   );

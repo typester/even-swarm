@@ -1,179 +1,252 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import {
+  CreateStartUpPageContainer,
   ListContainerProperty,
   ListItemContainerProperty,
-  TextContainerProperty,
-  CreateStartUpPageContainer,
-  RebuildPageContainer,
-  type EvenAppBridge,
+  MenuContainerProperty,
+  MenuItemProperty,
   OsEventTypeList,
+  RebuildPageContainer,
+  StartUpPageCreateResult,
+  TextContainerProperty,
+  utf8ByteLength,
+  type EvenAppBridge,
+  type EvenHubEvent,
 } from "@evenrealities/even_hub_sdk";
 import { log } from "../log";
 
-interface UseGlassesOptions {
-  bridge: EvenAppBridge | null;
-  onVenueListClick: (idx: number) => void;
-  onErrorRetry: () => void;
-  onForegroundEnter: () => void;
+export type GlassesPage =
+  | { kind: "text"; text: string; menu?: boolean }
+  | { kind: "list"; name: "venues" | "error"; items: string[]; menu?: boolean };
+
+export interface GlassesHandlers {
+  onVenueSelect?: (idx: number) => void;
+  onRetry?: () => void;
+  onReload?: () => void;
 }
 
-export function useGlasses({
-  bridge,
-  onVenueListClick,
-  onErrorRetry,
-  onForegroundEnter,
-}: UseGlassesOptions) {
-  // Refs to always invoke latest callbacks without stale closures
-  const onVenueListClickRef = useRef(onVenueListClick);
-  const onErrorRetryRef = useRef(onErrorRetry);
-  const onForegroundEnterRef = useRef(onForegroundEnter);
-  onVenueListClickRef.current = onVenueListClick;
-  onErrorRetryRef.current = onErrorRetry;
-  onForegroundEnterRef.current = onForegroundEnter;
+export interface Glasses {
+  show: (page: GlassesPage) => Promise<void>;
+  setHandlers: (handlers: GlassesHandlers) => void;
+  scheduleAutoExit: (ms: number) => void;
+}
 
-  const checkinReloadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null
-  );
-  const setupDoneRef = useRef(false);
+const MENU_RELOAD = 1;
 
-  useEffect(() => {
-    if (!bridge || setupDoneRef.current) return;
-    setupDoneRef.current = true;
+const MENU = new MenuContainerProperty({
+  menuItems: [new MenuItemProperty({ itemName: "Reload venues", itemID: MENU_RELOAD })],
+});
 
-    async function setup() {
-      const tc = new TextContainerProperty();
-      tc.containerID = 1;
-      tc.containerName = "status";
-      tc.xPosition = 0;
-      tc.yPosition = 0;
-      tc.width = 576;
-      tc.height = 288;
-      tc.content = "Loading...";
+// The firmware can deliver one gesture twice, 50-100 ms apart.
+const DUPLICATE_MS = 300;
+const SYS_DUPLICATE_MS = 600;
 
-      const startPage = new CreateStartUpPageContainer();
-      startPage.containerTotalNum = 1;
-      startPage.textObject = [tc];
+// List limits: the simulator rejects an item over 63 UTF-8 bytes (the docs say 64 characters), and
+// one over-long item makes the host reject the whole page, leaving the previous one on the glasses.
+const MAX_ITEMS = 20;
+const MAX_ITEM_BYTES = 63;
+const ITEM_TAIL = " | ";
+const ELLIPSIS = "...";
 
-      await bridge!.createStartUpPageContainer(startPage);
+// Shortens the part before the last " | " so the tail (a distance, "Tap to retry") stays readable.
+function fitItem(item: string): string {
+  if (utf8ByteLength(item) <= MAX_ITEM_BYTES) return item;
+  const cut = item.lastIndexOf(ITEM_TAIL);
+  const keepTail = cut >= 0 && utf8ByteLength(ELLIPSIS + item.slice(cut)) <= MAX_ITEM_BYTES;
+  const tail = keepTail ? item.slice(cut) : "";
+  const head = Array.from(keepTail ? item.slice(0, cut) : item);
+  while (head.length > 0 && utf8ByteLength(head.join("") + ELLIPSIS + tail) > MAX_ITEM_BYTES) {
+    head.pop();
+  }
+  return head.join("") + ELLIPSIS + tail;
+}
 
-      bridge!.onEvenHubEvent((event) => {
-        log(`[event] raw=${JSON.stringify(event)}`);
+const STARTUP_TEXT = "Checkin\n\nLoading...";
+const STARTUP_PAGE: GlassesPage = { kind: "text", text: STARTUP_TEXT };
 
-        if (event.listEvent) {
-          const evt = event.listEvent;
-          log(
-            `[listEvent] container=${evt.containerName} eventType=${evt.eventType} idx=${evt.currentSelectItemIndex}`
-          );
+function textContainer(text: string): TextContainerProperty {
+  const tc = new TextContainerProperty();
+  tc.containerID = 1;
+  tc.containerName = "status";
+  tc.xPosition = 0;
+  tc.yPosition = 0;
+  tc.width = 576;
+  tc.height = 288;
+  tc.content = text;
+  tc.isEventCapture = 1;
+  return tc;
+}
 
-          const isClick =
-            evt.eventType === OsEventTypeList.CLICK_EVENT ||
-            evt.eventType === undefined;
+function listContainer(name: string, items: string[]): ListContainerProperty {
+  const fitted = items.slice(0, MAX_ITEMS).map(fitItem);
+  const itemContainer = new ListItemContainerProperty();
+  itemContainer.itemCount = fitted.length;
+  itemContainer.itemWidth = 576;
+  itemContainer.isItemSelectBorderEn = 1;
+  itemContainer.itemName = fitted;
 
-          if (isClick) {
-            // Protobuf omits zero-valued numeric fields, so index 0 arrives as undefined
-            const idx = evt.currentSelectItemIndex ?? 0;
-            if (evt.containerName === "error") {
-              log("[listEvent] error retry → loadVenues()");
-              onErrorRetryRef.current();
-            } else if (evt.containerName === "venues") {
-              log(`[listEvent] venue selected idx=${idx} → doCheckin()`);
-              onVenueListClickRef.current(idx);
-            }
-          }
-        }
+  const lc = new ListContainerProperty();
+  lc.containerID = 1;
+  lc.containerName = name;
+  lc.xPosition = 0;
+  lc.yPosition = 0;
+  lc.width = 576;
+  lc.height = 288;
+  lc.isEventCapture = 1;
+  lc.itemContainer = itemContainer;
+  return lc;
+}
 
-        if (event.sysEvent) {
-          const sys = event.sysEvent;
-          log(`[sysEvent] eventType=${sys.eventType}`);
-          if (sys.eventType === OsEventTypeList.DOUBLE_CLICK_EVENT) {
-            log("[sysEvent] DOUBLE_CLICK → shutDownPageContainer(1)");
-            if (checkinReloadTimeoutRef.current) {
-              clearTimeout(checkinReloadTimeoutRef.current);
-              checkinReloadTimeoutRef.current = null;
-            }
-            bridge!.shutDownPageContainer(1);
-          } else if (sys.eventType === OsEventTypeList.FOREGROUND_ENTER_EVENT) {
-            log("[sysEvent] FOREGROUND_ENTER → loadVenues()");
-            onForegroundEnterRef.current();
-          }
-        }
-      });
-    }
+function rebuildOf(page: GlassesPage): RebuildPageContainer {
+  const p = new RebuildPageContainer();
+  p.containerTotalNum = 1;
+  if (page.kind === "text") p.textObject = [textContainer(page.text)];
+  else p.listObject = [listContainer(page.name, page.items)];
+  // A rebuild without menuObject clears the custom menu, so pages that keep it resend it.
+  if (page.menu) p.menuObject = MENU;
+  return p;
+}
 
-    setup().catch(console.error);
-  }, [bridge]);
+// The app owns the glasses for its whole life: the startup page is created once, as soon as the
+// bridge exists, whatever screen the phone shows.
+export function useGlasses(bridge: EvenAppBridge | null): Glasses {
+  const readyRef = useRef<Promise<void> | null>(null);
+  const pageRef = useRef<GlassesPage>(STARTUP_PAGE);
+  const renderedRef = useRef<GlassesPage>(STARTUP_PAGE);
+  const handlersRef = useRef<GlassesHandlers>({});
+  const exitingRef = useRef(false);
+  const autoExitRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastEventAtRef = useRef(new Map<string, number>());
 
-  const showText = useCallback(
-    async (text: string) => {
+  const render = useCallback(
+    async (page: GlassesPage) => {
       if (!bridge) return;
-      const tc = new TextContainerProperty();
-      tc.containerID = 1;
-      tc.containerName = "status";
-      tc.xPosition = 0;
-      tc.yPosition = 0;
-      tc.width = 576;
-      tc.height = 288;
-      tc.content = text;
-
-      const page = new RebuildPageContainer();
-      page.containerTotalNum = 1;
-      page.textObject = [tc];
-      await bridge.rebuildPageContainer(page);
-    },
-    [bridge]
-  );
-
-  const showList = useCallback(
-    async (items: string[], containerName: "venues" | "error") => {
-      if (!bridge || items.length === 0) return;
+      if (page.kind === "list" && page.items.length === 0) return;
       try {
-        const itemContainer = new ListItemContainerProperty();
-        itemContainer.itemCount = items.length;
-        itemContainer.itemWidth = 576;
-        itemContainer.isItemSelectBorderEn = 1;
-        itemContainer.itemName = items;
-
-        const lc = new ListContainerProperty();
-        lc.containerID = 1;
-        lc.containerName = containerName;
-        lc.xPosition = 0;
-        lc.yPosition = 0;
-        lc.width = 576;
-        lc.height = 288;
-        lc.isEventCapture = 1;
-        lc.itemContainer = itemContainer;
-
-        const page = new RebuildPageContainer();
-        page.containerTotalNum = 1;
-        page.listObject = [lc];
-        await bridge.rebuildPageContainer(page);
+        await bridge.rebuildPageContainer(rebuildOf(page));
       } catch (err) {
-        console.error("showList error:", err);
-        await showText(`List error:\n${String(err)}`);
+        console.error("rebuildPageContainer failed:", err);
       }
     },
-    [bridge, showText]
+    [bridge]
   );
 
-  const shutdown = useCallback(
-    (level: number) => {
-      bridge?.shutDownPageContainer(level);
+  // Pages asked for before the startup page exists are drawn once it does; only the latest counts.
+  const renderLatest = useCallback(async () => {
+    const page = pageRef.current;
+    if (renderedRef.current === page) return;
+    renderedRef.current = page;
+    await render(page);
+  }, [render]);
+
+  useEffect(() => {
+    if (!bridge || readyRef.current) return;
+
+    const isDuplicate = (kind: string, windowMs: number) => {
+      const now = Date.now();
+      if (now - (lastEventAtRef.current.get(kind) ?? 0) < windowMs) return true;
+      lastEventAtRef.current.set(kind, now);
+      return false;
+    };
+
+    const onDoubleClick = () => {
+      if (isDuplicate("double", DUPLICATE_MS)) return;
+      if (autoExitRef.current) {
+        clearTimeout(autoExitRef.current);
+        autoExitRef.current = null;
+      }
+      exitingRef.current = true;
+      log("[glasses] double tap → shutDownPageContainer(1)");
+      void bridge.shutDownPageContainer(1);
+    };
+
+    const onEvent = (event: EvenHubEvent) => {
+      log(`[event] raw=${JSON.stringify(event)}`);
+
+      const itemId = event.menuItemClickEvent?.itemID;
+      if (itemId !== undefined) {
+        if (itemId === MENU_RELOAD) {
+          log("[menu] Reload venues");
+          handlersRef.current.onReload?.();
+        }
+        return;
+      }
+
+      if (event.listEvent) {
+        const evt = event.listEvent;
+        // The SDK turns CLICK_EVENT (0) into undefined, and an index of 0 likewise.
+        const type = evt.eventType ?? OsEventTypeList.CLICK_EVENT;
+        if (type === OsEventTypeList.DOUBLE_CLICK_EVENT) return onDoubleClick();
+        if (type !== OsEventTypeList.CLICK_EVENT || isDuplicate("click", DUPLICATE_MS)) return;
+        const idx = evt.currentSelectItemIndex ?? 0;
+        if (evt.containerName === "error") handlersRef.current.onRetry?.();
+        else if (evt.containerName === "venues") handlersRef.current.onVenueSelect?.(idx);
+        return;
+      }
+
+      if (event.textEvent) {
+        if (event.textEvent.eventType === OsEventTypeList.DOUBLE_CLICK_EVENT) onDoubleClick();
+        return;
+      }
+
+      // FOREGROUND_ENTER arrives when a system layer (the exit dialog, the menu) opens over the
+      // app, not when the app comes back, so it is deliberately ignored.
+      switch (event.sysEvent?.eventType) {
+        case OsEventTypeList.DOUBLE_CLICK_EVENT:
+          onDoubleClick();
+          break;
+        case OsEventTypeList.FOREGROUND_EXIT_EVENT:
+          if (isDuplicate("foregroundExit", SYS_DUPLICATE_MS) || !exitingRef.current) break;
+          // During the exit dialog this means "No": the host has cleared the page by then.
+          exitingRef.current = false;
+          void render(pageRef.current);
+          break;
+      }
+    };
+
+    readyRef.current = (async () => {
+      const start = new CreateStartUpPageContainer();
+      start.containerTotalNum = 1;
+      start.textObject = [textContainer(STARTUP_TEXT)];
+      const result = await bridge.createStartUpPageContainer(start);
+      if (result !== StartUpPageCreateResult.success) {
+        log(`[glasses] createStartUpPageContainer → ${result}`);
+      }
+      bridge.onEvenHubEvent(onEvent);
+    })().catch((err) => console.error("glasses setup failed:", err));
+
+    void readyRef.current.then(renderLatest);
+  }, [bridge, render, renderLatest]);
+
+  const show = useCallback(
+    async (page: GlassesPage) => {
+      pageRef.current = page;
+      const ready = readyRef.current;
+      if (!ready) return;
+      await ready;
+      await renderLatest();
+    },
+    [renderLatest]
+  );
+
+  const setHandlers = useCallback((handlers: GlassesHandlers) => {
+    handlersRef.current = handlers;
+  }, []);
+
+  const scheduleAutoExit = useCallback(
+    (ms: number) => {
+      if (autoExitRef.current) clearTimeout(autoExitRef.current);
+      autoExitRef.current = setTimeout(() => {
+        autoExitRef.current = null;
+        log("[glasses] auto exit → shutDownPageContainer(0)");
+        void bridge?.shutDownPageContainer(0);
+      }, ms);
     },
     [bridge]
   );
 
-  const scheduleCheckinCleanup = useCallback(
-    (onShutdown: () => void) => {
-      log("[doCheckin] scheduling shutdown(0) + reload at +2000ms");
-      const t = setTimeout(() => {
-        log("[timer] shutDownPageContainer(0)");
-        bridge?.shutDownPageContainer(0);
-        onShutdown();
-      }, 2000);
-      checkinReloadTimeoutRef.current = t;
-    },
-    [bridge]
+  return useMemo(
+    () => ({ show, setHandlers, scheduleAutoExit }),
+    [show, setHandlers, scheduleAutoExit]
   );
-
-  return { showText, showList, shutdown, scheduleCheckinCleanup };
 }

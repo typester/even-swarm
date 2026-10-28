@@ -1,11 +1,7 @@
 import { useEffect, useState } from "react";
 import appJson from "../../app.json";
 
-interface DebugInfoPanelProps {
-  companionStatus: string;
-}
-
-export function DebugInfoPanel({ companionStatus }: DebugInfoPanelProps) {
+export function DebugInfoPanel() {
   const [geo, setGeo] = useState("geo: checking...");
 
   useEffect(() => {
@@ -32,7 +28,6 @@ export function DebugInfoPanel({ companionStatus }: DebugInfoPanelProps) {
       <div>origin: {window.location.origin}</div>
       <div>redirect_uri: {redirectUri}</div>
       <div>{geo}</div>
-      <div>companion: {companionStatus}</div>
     </div>
   );
 }

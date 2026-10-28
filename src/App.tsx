@@ -8,12 +8,17 @@ import { waitForEvenAppBridge, type EvenAppBridge } from "@evenrealities/even_hu
 import { storageGet, storageSet, storageRemove } from "./storage";
 import { setDebugLogEnabled } from "./log";
 import { handleAuthCallback, TOKEN_KEY } from "./foursquare";
+import { useGlasses } from "./hooks/useGlasses";
 import { LoginScreen } from "./screens/LoginScreen";
 import { AppScreen } from "./screens/AppScreen";
 import { SettingsScreen } from "./screens/SettingsScreen";
 
 const DEBUG_KEY = "swarm-debug-enabled";
-const COMPANION_KEY = "swarm-use-companion-app";
+// Inside the Even app the bridge always comes; falling back early would leave the glasses blank.
+const BRIDGE_TIMEOUT_MS = 10000;
+
+const LOGIN_TEXT =
+  'Checkin\n\nLog in on your phone:\nopen Checkin in the Even app\nand tap "Login with Foursquare".';
 
 function detectInEvenHub(): boolean {
   return typeof window !== "undefined" && "flutter_inappwebview" in window;
@@ -26,28 +31,30 @@ export function App() {
   const [bridgeReady, setBridgeReady] = useState(false);
   const [token, setToken] = useState<string | null>(null);
   const [debugEnabled, setDebugEnabled] = useState(false);
-  const [useCompanionApp, setUseCompanionApp] = useState(false);
   const [screen, setScreen] = useState<Screen>("loading");
   const [previousScreen, setPreviousScreen] = useState<"login" | "app">("login");
-  const [companionStatus, setCompanionStatus] = useState("—");
   const [isInEvenHub] = useState(detectInEvenHub);
+  const glasses = useGlasses(bridge);
 
-  // Step 1: connect glasses bridge (3s timeout)
+  // Step 1: connect the glasses bridge (only inside the Even app)
   useEffect(() => {
     let cancelled = false;
-    Promise.race([
-      waitForEvenAppBridge(),
-      new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000)),
-    ]).then((b) => {
+    const found: Promise<EvenAppBridge | null> = isInEvenHub
+      ? Promise.race([
+          waitForEvenAppBridge(),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), BRIDGE_TIMEOUT_MS)),
+        ])
+      : Promise.resolve(null);
+    found.then((b) => {
       if (!cancelled) {
-        setBridge(b as EvenAppBridge | null);
+        setBridge(b);
         setBridgeReady(true);
       }
     });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [isInEvenHub]);
 
   // Step 2: after bridge ready, load debug mode and token
   useEffect(() => {
@@ -58,9 +65,6 @@ export function App() {
       const debug = debugRaw === "true";
       setDebugEnabled(debug);
       setDebugLogEnabled(debug);
-
-      const companionRaw = await storageGet(COMPANION_KEY, b);
-      setUseCompanionApp(companionRaw === "true");
 
       const callbackToken = handleAuthCallback();
       if (callbackToken) {
@@ -77,6 +81,10 @@ export function App() {
 
     init(bridge).catch(console.error);
   }, [bridgeReady, bridge]);
+
+  useEffect(() => {
+    if (screen === "login") void glasses.show({ kind: "text", text: LOGIN_TEXT });
+  }, [screen, glasses]);
 
   const openSettings = () => {
     setPreviousScreen(screen === "settings" ? previousScreen : (screen as "login" | "app"));
@@ -95,11 +103,6 @@ export function App() {
     await storageSet(DEBUG_KEY, String(enabled), bridge);
     setDebugEnabled(enabled);
     setDebugLogEnabled(enabled);
-  };
-
-  const handleCompanionAppToggle = async (enabled: boolean) => {
-    await storageSet(COMPANION_KEY, String(enabled), bridge);
-    setUseCompanionApp(enabled);
   };
 
   if (screen === "loading") {
@@ -140,7 +143,6 @@ export function App() {
       {screen === "login" && (
         <LoginScreen
           debugEnabled={debugEnabled}
-          companionStatus={companionStatus}
           isInEvenHub={isInEvenHub}
           onOpenSettings={openSettings}
         />
@@ -149,18 +151,15 @@ export function App() {
         <AppScreen
           token={token}
           bridge={bridge}
+          glasses={glasses}
           debugEnabled={debugEnabled}
-          useCompanionApp={useCompanionApp}
           onLogout={handleLogout}
-          onCompanionStatusChange={setCompanionStatus}
           isInEvenHub={isInEvenHub}
           onOpenSettings={openSettings}
         />
       )}
       {screen === "settings" && (
         <SettingsScreen
-          useCompanionApp={useCompanionApp}
-          onCompanionAppToggle={handleCompanionAppToggle}
           debugEnabled={debugEnabled}
           onToggle={handleDebugToggle}
           onLogout={handleLogout}

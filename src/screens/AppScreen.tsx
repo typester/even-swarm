@@ -6,8 +6,8 @@ import { Page } from "even-toolkit/web/page";
 import { Button } from "even-toolkit/web/button";
 import { IcSettings } from "even-toolkit/web/icons/svg-icons";
 import type { EvenAppBridge } from "@evenrealities/even_hub_sdk";
-import { useGlasses } from "../hooks/useGlasses";
-import { getLocation, setCompanionStatusHandler } from "../location";
+import type { Glasses } from "../hooks/useGlasses";
+import { getLocation, NoLocationError } from "../location";
 import { log, setLogHandler } from "../log";
 import { searchVenues, checkin, type Venue } from "../foursquare";
 
@@ -29,10 +29,9 @@ function errorMessage(err: unknown): string {
 interface AppScreenProps {
   token: string;
   bridge: EvenAppBridge | null;
+  glasses: Glasses;
   debugEnabled: boolean;
-  useCompanionApp: boolean;
   onLogout: () => void;
-  onCompanionStatusChange: (s: string) => void;
   isInEvenHub: boolean;
   onOpenSettings: () => void;
 }
@@ -40,10 +39,9 @@ interface AppScreenProps {
 export function AppScreen({
   token,
   bridge,
+  glasses,
   debugEnabled,
-  useCompanionApp,
   onLogout,
-  onCompanionStatusChange,
   isInEvenHub,
   onOpenSettings,
 }: AppScreenProps) {
@@ -57,14 +55,6 @@ export function AppScreen({
   appStateRef.current = appState;
   const venuesRef = useRef(venues);
   venuesRef.current = venues;
-  const glassesRef = useRef<ReturnType<typeof useGlasses> | null>(null);
-
-  useEffect(() => {
-    setCompanionStatusHandler(onCompanionStatusChange);
-    return () => {
-      setCompanionStatusHandler(null);
-    };
-  }, [onCompanionStatusChange]);
 
   useEffect(() => {
     setLogHandler((msg) => {
@@ -83,12 +73,12 @@ export function AppScreen({
     log("[loadVenues] start");
 
     setAppState("loading");
-    await glassesRef.current?.showText("Getting location...");
+    await glasses.show({ kind: "text", text: "Getting location...", menu: true });
 
     try {
-      const { latitude, longitude } = await getLocation(useCompanionApp);
+      const { latitude, longitude } = await getLocation(bridge);
 
-      await glassesRef.current?.showText("Searching venues...");
+      await glasses.show({ kind: "text", text: "Searching venues...", menu: true });
 
       const { venues: found, debugText } = await searchVenues(
         token,
@@ -100,17 +90,24 @@ export function AppScreen({
       if (found.length === 0) {
         setAppState("error");
         setStatus("No venues found nearby");
-        await glassesRef.current?.showList(["No venues found | Tap to retry"], "error");
+        await glasses.show({
+          kind: "list",
+          name: "error",
+          items: ["No venues found | Tap to retry"],
+          menu: true,
+        });
         return;
       }
 
       setAppState("ready");
       setVenues(found);
       setStatus("");
-      await glassesRef.current?.showList(
-        found.map((v) => `${v.name} | ${formatDistance(v.distance)}`),
-        "venues"
-      );
+      await glasses.show({
+        kind: "list",
+        name: "venues",
+        items: found.map((v) => `${v.name} | ${formatDistance(v.distance)}`),
+        menu: true,
+      });
     } catch (err) {
       if (err instanceof Error && err.message === "UNAUTHORIZED") {
         onLogout();
@@ -119,9 +116,15 @@ export function AppScreen({
       const msg = errorMessage(err);
       setAppState("error");
       setStatus(msg);
-      await glassesRef.current?.showList([`${msg} | Tap to retry`], "error");
+      const short = err instanceof NoLocationError ? err.glassesText : msg;
+      await glasses.show({
+        kind: "list",
+        name: "error",
+        items: [`${short} | Tap to retry`],
+        menu: true,
+      });
     }
-  }, [token, onLogout, useCompanionApp]);
+  }, [token, onLogout, bridge, glasses]);
 
   const doCheckin = useCallback(
     async (idx: number) => {
@@ -132,33 +135,27 @@ export function AppScreen({
       log(`[state] ${appStateRef.current} → checking-in`);
       setAppState("checking-in");
       setStatus(`Checking in to ${venue.name}...`);
-      await glassesRef.current?.showText(`Checking in...\n${venue.name}`);
+      await glasses.show({ kind: "text", text: `Checking in...\n${venue.name}` });
 
       try {
         const name = await checkin(token, venue.id);
         setStatus(`Checked in to ${name}!`);
-        await glassesRef.current?.showText(`Checked in!\n${name}`);
-
-        glassesRef.current?.scheduleCheckinCleanup(() => {
-          window.location.reload();
-        });
+        await glasses.show({ kind: "text", text: `Checked in!\n${name}` });
+        glasses.scheduleAutoExit(2000);
       } catch (err) {
         const msg = errorMessage(err);
         setAppState("ready");
         setStatus(`Check-in failed: ${msg}`);
-        await glassesRef.current?.showText(`Failed:\n${msg}`);
+        await glasses.show({ kind: "text", text: `Failed:\n${msg}`, menu: true });
       }
     },
-    [token]
+    [token, glasses]
   );
 
-  const glasses = useGlasses({
-    bridge,
-    onVenueListClick: doCheckin,
-    onErrorRetry: loadVenues,
-    onForegroundEnter: loadVenues,
-  });
-  glassesRef.current = glasses;
+  useEffect(() => {
+    glasses.setHandlers({ onVenueSelect: doCheckin, onRetry: loadVenues, onReload: loadVenues });
+    return () => glasses.setHandlers({});
+  }, [glasses, doCheckin, loadVenues]);
 
   useEffect(() => {
     loadVenues();
