@@ -11,7 +11,9 @@ export function getAuthUrl(clientId: string): string {
     redirect_uri: REDIRECT_URI,
     state: window.location.href,
   });
-  return `https://foursquare.com/oauth2/authenticate?${params}`;
+  // Not /authenticate: it signs the foursquare.com session left in the WebView straight back in,
+  // while /authorize asks every time and lets another account sign in.
+  return `https://foursquare.com/oauth2/authorize?${params}`;
 }
 
 export function redirectToAuth(clientId: string): void {
