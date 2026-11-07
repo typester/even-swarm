@@ -2,6 +2,8 @@
 
 Swarm check-in app for [Even G2](https://evenrealities.com/) smart glasses.
 
+![Nearby venues listed on the Even G2 display](docs/cover.webp)
+
 Nearby venues appear on your glasses display — scroll and tap to check in to Swarm without touching your phone.
 
 ## Requirements
